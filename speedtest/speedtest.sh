@@ -29,8 +29,8 @@ UPLOAD_BPS=$(echo "$RESULT"   | jq -r '.upload // 0')
 PING_MS=$(echo "$RESULT"      | jq -r '.ping // 0')
 
 # Convert to Mbps (2 decimal places)
-DOWNLOAD_MBPS=$(awk "BEGIN {printf \"%.2f\", ($DOWNLOAD_BPS * 8) / 1000000}")
-UPLOAD_MBPS=$(awk "BEGIN {printf \"%.2f\", ($UPLOAD_BPS * 8) / 1000000}")
+DOWNLOAD_MBPS=$(awk "BEGIN {printf \"%.2f\", ($DOWNLOAD_BPS) / 1000000}")
+UPLOAD_MBPS=$(awk "BEGIN {printf \"%.2f\", ($UPLOAD_BPS) / 1000000}")
 
 # Build new entry
 NEW_ENTRY=$(jq -n \
