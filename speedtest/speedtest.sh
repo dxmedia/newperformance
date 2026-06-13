@@ -13,9 +13,9 @@ echo "Output file: $OUTPUT_FILE"
 echo
 
 # -----------------------------
-# 1. Get server list
+# 1. Get server list (correct source)
 # -----------------------------
-SERVER_LIST=$(speedtest --list 2>/dev/null || true)
+SERVER_LIST=$(speedtest --servers 2>/dev/null || true)
 
 if [[ -z "$SERVER_LIST" ]]; then
     echo "ERROR: Could not retrieve server list"
@@ -23,13 +23,12 @@ if [[ -z "$SERVER_LIST" ]]; then
 fi
 
 # -----------------------------
-# 2. Extract ONLY numeric IDs reliably
+# 2. Extract server IDs safely
 # -----------------------------
-SERVER_IDS=$(echo "$SERVER_LIST" | grep -oE '^[[:space:]]*[0-9]+' | tr -d ' ')
+SERVER_IDS=$(echo "$SERVER_LIST" | grep -oE '^[0-9]+' | sort -u)
 
 if [[ -z "$SERVER_IDS" ]]; then
     echo "ERROR: No valid server IDs found"
-    echo "DEBUG: Raw server list:"
     echo "$SERVER_LIST"
     exit 1
 fi
@@ -40,7 +39,6 @@ fi
 SERVER_ID=$(echo "$SERVER_IDS" | shuf -n 1)
 
 echo "Selected server ID: $SERVER_ID"
-
 # -----------------------------
 # 4. Run speedtest
 # -----------------------------
