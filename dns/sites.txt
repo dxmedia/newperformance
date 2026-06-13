@@ -1,0 +1,3 @@
+google.com
+cloudflare.com
+openai.com
