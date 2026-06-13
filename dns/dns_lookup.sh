@@ -28,6 +28,9 @@ if [[ ! -f "$OUTPUT_FILE" ]]; then
     echo "[]" > "$OUTPUT_FILE"
 fi
 
+chown www-data:www-data "$OUTPUT_FILE" || true
+chmod 644 "$OUTPUT_FILE" || true
+
 echo "Running DNS checks on: $HOSTNAME_SHORT"
 echo "Timestamp: $TIMESTAMP"
 echo "Output file: $OUTPUT_FILE"
