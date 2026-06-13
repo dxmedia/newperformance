@@ -1,3 +1,7 @@
 google.com
 cloudflare.com
 openai.com
+www.bt.com
+www.plus.net
+www.nhl.com
+www.bbc.co.uk
