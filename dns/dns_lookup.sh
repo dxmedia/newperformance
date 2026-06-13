@@ -23,13 +23,14 @@ if [[ ! -f "$DNS_SERVERS_FILE" ]]; then
     exit 1
 fi
 
-# Ensure JSON file exists and is valid JSON array
+# Create file if missing
 if [[ ! -f "$OUTPUT_FILE" ]]; then
     echo "[]" > "$OUTPUT_FILE"
 fi
 
-chown www-data:www-data "$OUTPUT_FILE" || true
-chmod 644 "$OUTPUT_FILE" || true
+# FIX PERMISSIONS ONCE (important)
+chown www-data:www-data "$OUTPUT_FILE" 2>/dev/null || true
+chmod 644 "$OUTPUT_FILE" 2>/dev/null || true
 
 echo "Running DNS checks on: $HOSTNAME_SHORT"
 echo "Timestamp: $TIMESTAMP"
@@ -44,26 +45,25 @@ while IFS= read -r SITE || [[ -n "$SITE" ]]; do
     while IFS= read -r DNS_SERVER || [[ -n "$DNS_SERVER" ]]; do
         [[ -z "$DNS_SERVER" || "$DNS_SERVER" =~ ^# ]] && continue
 
-        # Get IPs
+        # DNS lookup results
         IPS_RAW=$(dig @"$DNS_SERVER" "$SITE" +short 2>/dev/null || true)
 
-        # Get query time (more reliable separate call)
+        # timing (IMPORTANT: correct field parsing)
         DIG_STATS=$(dig @"$DNS_SERVER" "$SITE" +stats 2>/dev/null || true)
-        QUERY_TIME=$(echo "$DIG_STATS" | awk '/Query time:/ {print $4}')
+        QUERY_TIME=$(echo "$DIG_STATS" | awk -F': ' '/Query time:/ {print $2}' | awk '{print $1}')
 
         [[ -z "$QUERY_TIME" ]] && QUERY_TIME=0
 
-        # Parse IPs into JSON array
+        # convert IPs to JSON array
         IPS_JSON=$(echo "$IPS_RAW" | awk 'NF' | jq -R -s -c 'split("\n") | map(select(length>0))')
 
-        # Determine status
+        # status
         if [[ -n "$IPS_RAW" ]]; then
             STATUS="success"
         else
             STATUS="failed"
         fi
 
-        # Append safely using jq (prevents corruption)
         TMP_FILE=$(mktemp)
 
         jq --arg timestamp "$TIMESTAMP" \
@@ -84,6 +84,10 @@ while IFS= read -r SITE || [[ -n "$SITE" ]]; do
         }]' "$OUTPUT_FILE" > "$TMP_FILE"
 
         mv "$TMP_FILE" "$OUTPUT_FILE"
+
+        # FIX PERMISSIONS AFTER WRITE (prevents breakage)
+        chown www-data:www-data "$OUTPUT_FILE" 2>/dev/null || true
+        chmod 644 "$OUTPUT_FILE" 2>/dev/null || true
 
         echo "  $DNS_SERVER -> ${QUERY_TIME}ms ($STATUS)"
 
