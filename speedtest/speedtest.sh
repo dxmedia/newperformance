@@ -23,13 +23,14 @@ if [[ -z "$SERVER_LIST" ]]; then
 fi
 
 # -----------------------------
-# 2. Extract server IDs
-#    (Ookla format: ID + name in list output)
+# 2. Extract ONLY numeric IDs reliably
 # -----------------------------
-SERVER_IDS=$(echo "$SERVER_LIST" | awk '{print $1}' | grep -E '^[0-9]+$' || true)
+SERVER_IDS=$(echo "$SERVER_LIST" | grep -oE '^[[:space:]]*[0-9]+' | tr -d ' ')
 
 if [[ -z "$SERVER_IDS" ]]; then
     echo "ERROR: No valid server IDs found"
+    echo "DEBUG: Raw server list:"
+    echo "$SERVER_LIST"
     exit 1
 fi
 
@@ -50,7 +51,7 @@ RESULT=$(speedtest --secure --json --server "$SERVER_ID" 2>&1) || {
 }
 
 # -----------------------------
-# 5. Build JSON record
+# 5. Convert JSON safely
 # -----------------------------
 JSON=$(jq -n \
     --arg timestamp "$TIMESTAMP" \
@@ -62,14 +63,21 @@ JSON=$(jq -n \
         server_id: ($raw.server.id // null),
         server_name: ($raw.server.name // null),
         ping_ms: ($raw.ping.latency // null),
-        download_mbps: (($raw.download.bandwidth // 0) * 8 / 1000000 | floor * 100 / 100),
-        upload_mbps: (($raw.upload.bandwidth // 0) * 8 / 1000000 | floor * 100 / 100),
-        packet_loss: ($raw.packetLoss // null)
+
+        download_mbps: (
+            (($raw.download.bandwidth // 0) * 8 / 1000000)
+            | (.*100 | floor / 100)
+        ),
+
+        upload_mbps: (
+            (($raw.upload.bandwidth // 0) * 8 / 1000000)
+            | (.*100 | floor / 100)
+        )
     }
 ')
 
 # -----------------------------
-# 6. Append safely (jq array update)
+# 6. Append safely (no overwrite)
 # -----------------------------
 if [[ ! -f "$OUTPUT_FILE" ]]; then
     echo "[]" > "$OUTPUT_FILE"
