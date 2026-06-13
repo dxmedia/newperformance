@@ -9,7 +9,6 @@ from datetime import datetime
 
 # ---- CONFIG ----
 TIMEOUT = 60
-LOGFILE = "/var/www/html/newperformance/webmail/roundcube_results.json"
 
 session = requests.Session()
 
@@ -27,11 +26,7 @@ def extract_json_object(text, start_pos):
 
 
 def append_json_line(filepath, obj):
-    """
-    Append JSON safely without breaking permissions or overwriting file.
-    """
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
-
     with open(filepath, "a") as f:
         f.write(json.dumps(obj) + "\n")
 
@@ -45,10 +40,14 @@ def main():
     username = sys.argv[2]
     password = sys.argv[3]
 
+    hostname = os.uname().nodename
+
+    # ✅ hostname-based output file
+    LOGFILE = f"/var/www/html/newperformance/webmail/roundcube_results_{hostname}.json"
+
     login_path = "/?_task=login"
     ajax_inbox_path = "/?_task=mail&_action=list&_mbox=INBOX&_remote=1"
 
-    hostname = os.uname().nodename
     timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
     try:
@@ -59,15 +58,13 @@ def main():
         token = re.search(r'name="_token" value="([^"]+)"', login_page.text)
 
         if not token:
-            result = {
+            append_json_line(LOGFILE, {
                 "timestamp": timestamp,
                 "hostname": hostname,
                 "status": "failed",
                 "step": "csrf_token",
-                "url": roundcube_url,
-                "error": "unable to extract csrf token"
-            }
-            append_json_line(LOGFILE, result)
+                "url": roundcube_url
+            })
             sys.exit(2)
 
         token_value = token.group(1)
@@ -84,15 +81,14 @@ def main():
         login_response = session.post(roundcube_url + login_path, data=payload, timeout=TIMEOUT)
 
         if "login failed" in login_response.text.lower():
-            result = {
+            append_json_line(LOGFILE, {
                 "timestamp": timestamp,
                 "hostname": hostname,
                 "status": "failed",
                 "step": "login",
                 "url": roundcube_url,
                 "user": username
-            }
-            append_json_line(LOGFILE, result)
+            })
             sys.exit(2)
 
         # 3. Inbox request
@@ -102,14 +98,12 @@ def main():
         }
 
         inbox_response = session.get(roundcube_url + ajax_inbox_path, headers=headers, timeout=TIMEOUT)
-
         response_text = inbox_response.text
 
         # 4. Extract email count
         total_count = 0
-        env_key = '"env":'
+        pos = response_text.find('"env":')
 
-        pos = response_text.find(env_key)
         if pos != -1:
             start = response_text.find('{', pos)
             if start != -1:
@@ -122,7 +116,7 @@ def main():
 
         elapsed = time.time() - start_time
 
-        # 5. FINAL JSON OUTPUT
+        # 5. Output JSON
         result = {
             "timestamp": timestamp,
             "hostname": hostname,
@@ -139,16 +133,21 @@ def main():
         print(json.dumps(result))
 
     except Exception as e:
-        result = {
+        append_json_line(LOGFILE, {
             "timestamp": timestamp,
             "hostname": hostname,
             "status": "error",
             "error": str(e),
             "url": roundcube_url
-        }
+        })
 
-        append_json_line(LOGFILE, result)
-        print(json.dumps(result))
+        print(json.dumps({
+            "timestamp": timestamp,
+            "hostname": hostname,
+            "status": "error",
+            "error": str(e)
+        }))
+
         sys.exit(2)
 
 
