@@ -2,8 +2,9 @@
 
 set -euo pipefail
 
-SITES_FILE="${1:-sites.txt}"
-DNS_SERVERS_FILE="${2:-dns_servers.txt}"
+INPUT_DIR="/opt/newperformance/dns"
+SITES_FILE="${INPUT_DIR}/sites.txt}"
+DNS_SERVERS_FILE="${INPUT_DIR}/dns_servers.txt}"
 
 HOSTNAME_SHORT=$(hostname -s)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
