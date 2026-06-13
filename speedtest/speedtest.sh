@@ -5,84 +5,59 @@ set -euo pipefail
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
-OUTPUT_FILE="/var/www/html/newperformance/speedtest/speedtest_results_${HOSTNAME}.json"
+OUTPUT_DIR="/var/www/html/newperformance/speedtest"
+OUTPUT_FILE="${OUTPUT_DIR}/speedtest_results_${HOSTNAME}.json"
+
+mkdir -p "$OUTPUT_DIR"
 
 echo "Running speedtest on: $HOSTNAME"
 echo "Timestamp: $TIMESTAMP"
 echo "Output file: $OUTPUT_FILE"
 echo
 
-# -----------------------------
-# 1. Get server list (correct source)
-# -----------------------------
-SERVER_LIST=$(speedtest --servers 2>/dev/null || true)
-
-if [[ -z "$SERVER_LIST" ]]; then
-    echo "ERROR: Could not retrieve server list"
-    exit 1
-fi
-
-# -----------------------------
-# 2. Extract server IDs safely
-# -----------------------------
-SERVER_IDS=$(echo "$SERVER_LIST" | grep -oE '^[0-9]+' | sort -u)
-
-if [[ -z "$SERVER_IDS" ]]; then
-    echo "ERROR: No valid server IDs found"
-    echo "$SERVER_LIST"
-    exit 1
-fi
-
-# -----------------------------
-# 3. Pick random server
-# -----------------------------
-SERVER_ID=$(echo "$SERVER_IDS" | shuf -n 1)
-
-echo "Selected server ID: $SERVER_ID"
-# -----------------------------
-# 4. Run speedtest
-# -----------------------------
-RESULT=$(speedtest --secure --json --server "$SERVER_ID" 2>&1) || {
-    echo "ERROR: Speedtest failed for server $SERVER_ID"
-    echo "$RESULT"
-    exit 1
-}
-
-# -----------------------------
-# 5. Convert JSON safely
-# -----------------------------
-JSON=$(jq -n \
-    --arg timestamp "$TIMESTAMP" \
-    --arg hostname "$HOSTNAME" \
-    --argjson raw "$RESULT" '
-    {
-        timestamp: $timestamp,
-        hostname: $hostname,
-        server_id: ($raw.server.id // null),
-        server_name: ($raw.server.name // null),
-        ping_ms: ($raw.ping.latency // null),
-
-        download_mbps: (
-            (($raw.download.bandwidth // 0) * 8 / 1000000)
-            | (.*100 | floor / 100)
-        ),
-
-        upload_mbps: (
-            (($raw.upload.bandwidth // 0) * 8 / 1000000)
-            | (.*100 | floor / 100)
-        )
-    }
-')
-
-# -----------------------------
-# 6. Append safely (no overwrite)
-# -----------------------------
+# Ensure file exists and is valid JSON array
 if [[ ! -f "$OUTPUT_FILE" ]]; then
-    echo "[]" > "$OUTPUT_FILE"
+  echo "[]" > "$OUTPUT_FILE"
 fi
 
-TMP=$(mktemp)
+# Run speedtest (Ookla CLI)
+RESULT=$(speedtest --secure --json -single)
 
-jq ". + [$JSON]" "$OUTPUT_FILE" > "$TMP" && mv "$TMP" "$OUTPUT_FILE"
+# Extract values (bits/sec in most versions)
+DOWNLOAD_BPS=$(echo "$RESULT" | jq -r '.download // 0')
+UPLOAD_BPS=$(echo "$RESULT"   | jq -r '.upload // 0')
+PING_MS=$(echo "$RESULT"      | jq -r '.ping // 0')
 
-echo "$JSON"
+# Convert to Mbps (2 decimal places)
+DOWNLOAD_MBPS=$(awk "BEGIN {printf \"%.2f\", ($DOWNLOAD_BPS) / 1000000}")
+UPLOAD_MBPS=$(awk "BEGIN {printf \"%.2f\", ($UPLOAD_BPS) / 1000000}")
+
+# Build new entry
+NEW_ENTRY=$(jq -n \
+  --arg timestamp "$TIMESTAMP" \
+  --arg host "$HOSTNAME" \
+  --argjson download_mbps "$DOWNLOAD_MBPS" \
+  --argjson upload_mbps "$UPLOAD_MBPS" \
+  --argjson ping_ms "$PING_MS" \
+  '{
+    timestamp: $timestamp,
+    host: $host,
+    download_mbps: $download_mbps,
+    upload_mbps: $upload_mbps,
+    ping_ms: $ping_ms
+  }'
+)
+
+# Append into JSON array safely
+TMP_FILE=$(mktemp)
+
+jq --argjson new "$NEW_ENTRY" '. += [$new]' "$OUTPUT_FILE" > "$TMP_FILE"
+
+# preserve permissions by overwriting safely
+cat "$TMP_FILE" > "$OUTPUT_FILE"
+rm "$TMP_FILE"
+
+# enforce correct permissions every run
+chown www-data:www-data "$OUTPUT_FILE" 2>/dev/null || true
+chmod 644 "$OUTPUT_FILE"
+echo "Done."
