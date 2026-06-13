@@ -39,7 +39,7 @@ DIG_OUTPUT=$(dig "$SITE" +stats +short 2>/dev/null)
 
 IPS=$(echo "$DIG_OUTPUT" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
 
-QUERY_TIME=$(echo "$DIG_OUTPUT" | awk '/Query time:/ {print $4}')
+QUERY_TIME=$(dig "$SITE" +stats 2>/dev/null | awk '/Query time:/ {print $4}')
 
     if [[ -z "$QUERY_TIME" ]]; then
         QUERY_TIME=0
