@@ -21,7 +21,7 @@ if [[ ! -f "$OUTPUT_FILE" ]]; then
 fi
 
 # Run speedtest (Ookla CLI)
-RESULT=$(speedtest --secure --json -single)
+RESULT=$(speedtest --secure --json --single)
 
 # Extract values (bits/sec in most versions)
 DOWNLOAD_BPS=$(echo "$RESULT" | jq -r '.download // 0')
