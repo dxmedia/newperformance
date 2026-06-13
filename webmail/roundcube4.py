@@ -5,11 +5,14 @@ import sys
 import re
 import json
 import os
+import subprocess
 from datetime import datetime
+import tempfile
+import shutil
+import stat
 
 # ---- CONFIG ----
 TIMEOUT = 60
-
 session = requests.Session()
 
 
@@ -25,10 +28,52 @@ def extract_json_object(text, start_pos):
     return None
 
 
-def append_json_line(filepath, obj):
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    with open(filepath, "a") as f:
-        f.write(json.dumps(obj) + "\n")
+def jq_append_safe(file_path, obj):
+    obj_json = json.dumps(obj)
+
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    # If file doesn't exist, create empty JSON array
+    if not os.path.exists(file_path):
+        with open(file_path, "w") as f:
+            f.write("[]")
+
+    # Preserve original permissions
+    orig_mode = stat.S_IMODE(os.stat(file_path).st_mode)
+
+    # Create temp file in same directory (important for atomic mv)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(file_path))
+    os.close(tmp_fd)
+
+    try:
+        cmd = [
+            "jq",
+            "--argjson",
+            "new",
+            obj_json,
+            ". + [$new]",
+            file_path
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr)
+
+        # Write jq output to temp file
+        with open(tmp_path, "w") as f:
+            f.write(result.stdout)
+
+        # Restore permissions explicitly
+        os.chmod(tmp_path, orig_mode)
+
+        # Atomic replace (does NOT change permissions of target inode)
+        shutil.move(tmp_path, file_path)
+
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 def main():
@@ -42,7 +87,6 @@ def main():
 
     hostname = os.uname().nodename
 
-    # ✅ hostname-based output file
     LOGFILE = f"/var/www/html/newperformance/webmail/roundcube_results_{hostname}.json"
 
     login_path = "/?_task=login"
@@ -53,12 +97,11 @@ def main():
     try:
         start_time = time.time()
 
-        # 1. Load login page
         login_page = session.get(roundcube_url, timeout=TIMEOUT)
         token = re.search(r'name="_token" value="([^"]+)"', login_page.text)
 
         if not token:
-            append_json_line(LOGFILE, {
+            jq_append_safe(LOGFILE, {
                 "timestamp": timestamp,
                 "hostname": hostname,
                 "status": "failed",
@@ -69,7 +112,6 @@ def main():
 
         token_value = token.group(1)
 
-        # 2. Login
         payload = {
             "_token": token_value,
             "_task": "login",
@@ -78,10 +120,14 @@ def main():
             "_pass": password
         }
 
-        login_response = session.post(roundcube_url + login_path, data=payload, timeout=TIMEOUT)
+        login_response = session.post(
+            roundcube_url + login_path,
+            data=payload,
+            timeout=TIMEOUT
+        )
 
         if "login failed" in login_response.text.lower():
-            append_json_line(LOGFILE, {
+            jq_append_safe(LOGFILE, {
                 "timestamp": timestamp,
                 "hostname": hostname,
                 "status": "failed",
@@ -91,23 +137,24 @@ def main():
             })
             sys.exit(2)
 
-        # 3. Inbox request
         headers = {
             "X-Requested-With": "XMLHttpRequest",
             "Referer": roundcube_url + "/?_task=mail&_mbox=INBOX"
         }
 
-        inbox_response = session.get(roundcube_url + ajax_inbox_path, headers=headers, timeout=TIMEOUT)
-        response_text = inbox_response.text
+        inbox_response = session.get(
+            roundcube_url + ajax_inbox_path,
+            headers=headers,
+            timeout=TIMEOUT
+        )
 
-        # 4. Extract email count
         total_count = 0
-        pos = response_text.find('"env":')
+        pos = inbox_response.text.find('"env":')
 
         if pos != -1:
-            start = response_text.find('{', pos)
+            start = inbox_response.text.find('{', pos)
             if start != -1:
-                env_json_str = extract_json_object(response_text, start)
+                env_json_str = extract_json_object(inbox_response.text, start)
                 try:
                     env = json.loads(env_json_str)
                     total_count = int(env.get("messagecount", 0))
@@ -116,7 +163,6 @@ def main():
 
         elapsed = time.time() - start_time
 
-        # 5. Output JSON
         result = {
             "timestamp": timestamp,
             "hostname": hostname,
@@ -128,12 +174,12 @@ def main():
             "total_emails": total_count
         }
 
-        append_json_line(LOGFILE, result)
+        jq_append_safe(LOGFILE, result)
 
         print(json.dumps(result))
 
     except Exception as e:
-        append_json_line(LOGFILE, {
+        jq_append_safe(LOGFILE, {
             "timestamp": timestamp,
             "hostname": hostname,
             "status": "error",
