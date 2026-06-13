@@ -35,11 +35,11 @@ while IFS= read -r SITE || [[ -n "$SITE" ]]; do
 
     echo "Looking up $SITE..."
 
-    DIG_OUTPUT=$(dig "$SITE" A +stats 2>/dev/null || true)
+DIG_OUTPUT=$(dig "$SITE" +stats +short 2>/dev/null)
 
-    IPS=$(echo "$DIG_OUTPUT" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
+IPS=$(echo "$DIG_OUTPUT" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
 
-    QUERY_TIME=$(echo "$DIG_OUTPUT" | awk '/Query time:/ {print $4}')
+QUERY_TIME=$(echo "$DIG_OUTPUT" | awk '/Query time:/ {print $4}')
 
     if [[ -z "$QUERY_TIME" ]]; then
         QUERY_TIME=0
