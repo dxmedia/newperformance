@@ -51,7 +51,13 @@ NEW_ENTRY=$(jq -n \
 # Append into JSON array safely
 TMP_FILE=$(mktemp)
 
-jq --argjson new "$NEW_ENTRY" '. += [$new]' "$OUTPUT_FILE" > "$TMP_FILE" \
-  && mv "$TMP_FILE" "$OUTPUT_FILE"
+jq --argjson new "$NEW_ENTRY" '. += [$new]' "$OUTPUT_FILE" > "$TMP_FILE"
 
+# preserve permissions by overwriting safely
+cat "$TMP_FILE" > "$OUTPUT_FILE"
+rm "$TMP_FILE"
+
+# enforce correct permissions every run
+chown www-data:www-data "$OUTPUT_FILE" 2>/dev/null || true
+chmod 644 "$OUTPUT_FILE"
 echo "Done."
