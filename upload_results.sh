@@ -7,21 +7,17 @@ API_KEY="MySecretUploadKey"
 
 find /var/www/html/newperformance -type f -name "*.json" | while read -r FILE
 do
-echo "Uploading: $FILE"
+    echo "Uploading: $FILE"
 
-```
-RESPONSE=$(curl -k -s \
-    -F "apikey=${API_KEY}" \
-    -F "file=@${FILE}" \
-    "${UPLOAD_URL}")
+    RESPONSE=$(curl -k -s \
+        -F "apikey=${API_KEY}" \
+        -F "file=@${FILE}" \
+        "${UPLOAD_URL}")
 
-if [[ "$RESPONSE" == "OK" ]]; then
-    echo "SUCCESS: $FILE"
-else
-    echo "FAILED: $FILE"
-    echo "Response: $RESPONSE"
-fi
-```
-
+    if [[ "$RESPONSE" == "OK" ]]; then
+        echo "SUCCESS: $FILE"
+    else
+        echo "FAILED: $FILE"
+        echo "Response: $RESPONSE"
+    fi
 done
-
